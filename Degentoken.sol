@@ -1,57 +1,56 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract JFT is ERC721 {
-    using Strings for uint256;
+contract DegenToken is ERC20, Ownable {
+    event Redeem(address indexed from, uint256 itemId, uint256 quantity);
 
-    string private _name;
-    string private _symbol;
-    uint256 private tokenIdCounter;
-    string public promptDesc;
-    mapping(uint256 => string) private tokenURIs;
-
-    event NFTMinted(address indexed owner, uint256 indexed tokenId, string tokenURI);
-    event NFTTransferred(address indexed from, address indexed to, uint256 indexed tokenId);
-    event TokenURIUpdated(uint256 indexed tokenId, string newTokenURI);
-
-    constructor(string memory _promptDesc, string memory name_, string memory symbol_) ERC721(name_, symbol_) {
-        tokenIdCounter = 0;
-        promptDesc = _promptDesc;
-        _name = name_;
-        _symbol = symbol_;
+    struct Item {
+        uint256 price;
+        uint256 quantity;
     }
 
-    function mintNFT(address recipient, string memory nftTokenURI) public returns (uint256) {
-        uint256 tokenId = tokenIdCounter + 1;
-        _mint(recipient, tokenId);
-        _setTokenURI(tokenId, nftTokenURI);
-        emit NFTMinted(recipient, tokenId, nftTokenURI);
-        tokenIdCounter = tokenId;
-        return tokenId;
+    mapping(uint256 => Item) public storeItems;
+    uint256 public itemCount;
+
+    constructor() ERC20("Degen Token", "DGNT") {
     }
 
-    function _setTokenURI(uint256 tokenId, string memory nftTokenURI) internal {
-        require(_exists(tokenId), "ERC721Metadata: URI set of nonexistent token");
-        tokenURIs[tokenId] = nftTokenURI;
-        emit TokenURIUpdated(tokenId, nftTokenURI);
+    function mint(address to, uint256 value) external onlyOwner {
+        require(to != address(0), "Invalid address");
+        require(value > 0, "Invalid value");
+
+        _mint(to, value);
+        emit Transfer(address(0), to, value);
     }
 
-    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
-        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
-        return tokenURIs[tokenId];
+    function redeem(uint256 itemId, uint256 quantity) external {
+        require(itemId > 0 && itemId <= itemCount, "Invalid item ID");
+        require(quantity > 0, "Quantity must be greater than zero");
+        require(storeItems[itemId].quantity >= quantity, "Item not available");
+
+        uint256 totalCost = storeItems[itemId].price * quantity;
+        require(balanceOf(msg.sender) >= totalCost, "Insufficient balance");
+
+        _transfer(msg.sender, owner(), totalCost);
+        storeItems[itemId].quantity -= quantity;
+
+        emit Redeem(msg.sender, itemId, quantity);
     }
 
-    function getNFTURI(uint256 tokenId) public view returns (string memory) {
-        return tokenURI(tokenId);
+    function addItem(uint256 price, uint256 initialQuantity) external onlyOwner {
+        require(price > 0, "Invalid price");
+        require(initialQuantity > 0, "Invalid quantity");
+
+        itemCount++;
+        storeItems[itemCount] = Item(price, initialQuantity);
     }
 
-    function transferNFT(address from, address to, uint256 tokenId) public {
-        require(_isApprovedOrOwner(msg.sender, tokenId), "ERC721: transfer caller is not owner nor approved");
-        _transfer(from, to, tokenId);
-        emit NFTTransferred(from, to, tokenId);
+    function burn(uint256 amount) external {
+        require(amount > 0 && balanceOf(msg.sender) >= amount, "Insufficient balance");
+
+        _burn(msg.sender, amount);
     }
 }
-
